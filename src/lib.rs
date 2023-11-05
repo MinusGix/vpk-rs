@@ -2,11 +2,10 @@ pub mod entry;
 pub mod structs;
 pub mod vpk;
 
-
 pub use crate::vpk::VPK;
 
-use thiserror::Error;
 use std::path::Path;
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -21,11 +20,11 @@ pub enum Error {
     #[error("Mismatched size for hashes section")]
     HashSizeMismatch,
     #[error("Malformed index encountered while parsing")]
-    MalformedIndex
+    MalformedIndex,
 }
 
-pub fn from_path(path: &str) -> Result<VPK, Error> {
-    let path = Path::new(path);
+pub fn from_path(path: impl AsRef<Path>) -> Result<VPK, Error> {
+    let path = path.as_ref();
     let vpk = VPK::read(&path)?;
 
     Ok(vpk)
