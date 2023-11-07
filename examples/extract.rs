@@ -7,6 +7,8 @@ use std::io::Write;
 use std::path::Path;
 use std::vec::Vec;
 
+use vpk::vpk::ProbableKind;
+
 fn main() -> std::io::Result<()> {
     let args: Vec<_> = env::args().collect();
 
@@ -20,7 +22,7 @@ fn main() -> std::io::Result<()> {
         panic!("Given export path is not directory or doesn't exists");
     }
 
-    let vpk_file = match vpk::from_path(&args[1]) {
+    let vpk_file = match vpk::from_path(&args[1], ProbableKind::None) {
         Err(e) => panic!("Error while open file {}, err {}", &args[1], e),
         Ok(vpk_file) => vpk_file,
     };

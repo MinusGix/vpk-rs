@@ -32,6 +32,10 @@ const VPK_SELF_HASHES_LENGTH: u32 = 48;
 pub enum Ext<'a> {
     Vmt,
     Vtf,
+    Vtx,
+    Vvd,
+    Phy,
+    Res,
     Mdl,
     Scr,
     Xsc,
@@ -42,6 +46,8 @@ pub enum Ext<'a> {
     Icns,
     Bmp,
     Dat,
+    Wav,
+    Mp3,
     Other(Cow<'a, [u8]>),
 }
 impl<'a> Ext<'a> {
@@ -49,6 +55,10 @@ impl<'a> Ext<'a> {
         match self {
             Ext::Vmt => b"vmt",
             Ext::Vtf => b"vtf",
+            Ext::Vtx => b"vtx",
+            Ext::Vvd => b"vvd",
+            Ext::Phy => b"phy",
+            Ext::Res => b"res",
             Ext::Mdl => b"mdl",
             Ext::Scr => b"scr",
             Ext::Xsc => b"xsc",
@@ -59,6 +69,8 @@ impl<'a> Ext<'a> {
             Ext::Icns => b"icns",
             Ext::Bmp => b"bmp",
             Ext::Dat => b"dat",
+            Ext::Wav => b"wav",
+            Ext::Mp3 => b"mp3",
             Ext::Other(s) => s.as_ref(),
         }
     }
@@ -67,6 +79,10 @@ impl<'a> Ext<'a> {
         match self {
             Ext::Vmt => Ext::Vmt,
             Ext::Vtf => Ext::Vtf,
+            Ext::Vtx => Ext::Vtx,
+            Ext::Vvd => Ext::Vvd,
+            Ext::Phy => Ext::Phy,
+            Ext::Res => Ext::Res,
             Ext::Mdl => Ext::Mdl,
             Ext::Scr => Ext::Scr,
             Ext::Xsc => Ext::Xsc,
@@ -77,6 +93,8 @@ impl<'a> Ext<'a> {
             Ext::Icns => Ext::Icns,
             Ext::Bmp => Ext::Bmp,
             Ext::Dat => Ext::Dat,
+            Ext::Wav => Ext::Wav,
+            Ext::Mp3 => Ext::Mp3,
             Ext::Other(s) => Ext::Other(Cow::Borrowed(s.as_ref())),
         }
     }
@@ -90,6 +108,10 @@ impl<'a> Ext<'a> {
         match s.as_ref() {
             b"vmt" => Ext::Vmt,
             b"vtf" => Ext::Vtf,
+            b"vtx" => Ext::Vtx,
+            b"vvd" => Ext::Vvd,
+            b"phy" => Ext::Phy,
+            b"res" => Ext::Res,
             b"mdl" => Ext::Mdl,
             b"scr" => Ext::Scr,
             b"xsc" => Ext::Xsc,
@@ -100,6 +122,8 @@ impl<'a> Ext<'a> {
             b"icns" => Ext::Icns,
             b"bmp" => Ext::Bmp,
             b"dat" => Ext::Dat,
+            b"wav" => Ext::Wav,
+            b"mp3" => Ext::Mp3,
             _ => Ext::Other(s),
         }
     }
@@ -108,6 +132,25 @@ impl<'a> Ext<'a> {
 // TODO: optionally check checksum
 // TODO: Should we also lowercase non-ascii text? Windows
 // does that.
+
+#[derive(Debug, Clone, Copy)]
+pub enum ProbableKind {
+    /// Don't allocate with any capacity at the start
+    None,
+    /// Ex: tf2_textures_dir.vpk has ~26k vtfs and nothing else really
+    Tf2Textures,
+    /// Ex: tf2_misc_dir.vpk which has a varied mix of lots of types.  
+    /// like ~24k vmt, 13.4k mdl, ~40k vtx, 13.4k vvd, 4.5k phy, 800 res, etc.
+    Tf2Misc,
+    // TODO: check if these numbers hold for normal hl2, or whether this is only for the hl2 files
+    // still included in tf2/hl2
+    // ~5.15k vmt, 6.5k vtx, 2.2k vvd, 2k phy, ~210 res, ~2210 mdl
+    Hl2Misc,
+    /// 5.03k vmt
+    Hl2Textures,
+    /// 2920 wav, 60 mp3
+    Hl2MiscSound,
+}
 
 #[derive(Clone)]
 pub struct VPK {
@@ -123,7 +166,7 @@ pub struct VPK {
 }
 
 impl VPK {
-    pub fn read(dir_path: &Path) -> Result<VPK, Error> {
+    pub fn read(dir_path: &Path, probable_kind: ProbableKind) -> Result<VPK, Error> {
         // Read the file into memory. Dir vpks are usually pretty small.
         let file: Arc<[u8]> = Arc::from(std::fs::read(dir_path)?);
 
@@ -144,7 +187,7 @@ impl VPK {
             header,
             header_v2: None,
             header_v2_checksum: None,
-            tree: VPKTree::default(),
+            tree: VPKTree::new_with_capacity(probable_kind),
             data: file.clone(),
         };
 
@@ -349,6 +392,10 @@ pub struct VPKTree {
     // filename!
     pub vmt: DirFileEntryMap,
     pub vtf: DirFileEntryMap,
+    pub vtx: DirFileEntryMap,
+    pub vvd: DirFileEntryMap,
+    pub phy: DirFileEntryMap,
+    pub res: DirFileEntryMap,
     pub mdl: DirFileEntryMap,
     pub scr: DirFileEntryMap,
     pub xsc: DirFileEntryMap,
@@ -359,14 +406,55 @@ pub struct VPKTree {
     pub icns: DirFileEntryMap,
     pub bmp: DirFileEntryMap,
     pub dat: DirFileEntryMap,
+    pub wav: DirFileEntryMap,
+    pub mp3: DirFileEntryMap,
     /// (ext, dir file entry map)
     pub other: IndexMap<Vec<u8>, DirFileEntryMap>,
 }
 impl VPKTree {
+    pub fn new_with_capacity(probable_kind: ProbableKind) -> VPKTree {
+        let mut tree = VPKTree::default();
+        match probable_kind {
+            ProbableKind::None => {}
+            ProbableKind::Tf2Textures => {
+                tree.vtf.reserve(26000);
+            }
+            ProbableKind::Tf2Misc => {
+                tree.vmt.reserve(24000);
+                tree.mdl.reserve(13400);
+                tree.vtx.reserve(40000);
+                tree.vvd.reserve(13400);
+                tree.phy.reserve(4500);
+                tree.res.reserve(800);
+            }
+            ProbableKind::Hl2Misc => {
+                tree.vmt.reserve(5150);
+                tree.vtx.reserve(6500);
+                tree.vvd.reserve(2200);
+                tree.phy.reserve(2000);
+                tree.res.reserve(210);
+                tree.mdl.reserve(2210);
+            }
+            ProbableKind::Hl2Textures => {
+                tree.vmt.reserve(5030);
+            }
+            ProbableKind::Hl2MiscSound => {
+                tree.wav.reserve(2920);
+                tree.mp3.reserve(60);
+            }
+        }
+
+        tree
+    }
+
     pub fn for_ext(&self, ext: &Ext<'_>) -> Option<&DirFileEntryMap> {
         match ext {
             Ext::Vmt => Some(&self.vmt),
             Ext::Vtf => Some(&self.vtf),
+            Ext::Vtx => Some(&self.vtx),
+            Ext::Vvd => Some(&self.vvd),
+            Ext::Phy => Some(&self.phy),
+            Ext::Res => Some(&self.res),
             Ext::Mdl => Some(&self.mdl),
             Ext::Scr => Some(&self.scr),
             Ext::Xsc => Some(&self.xsc),
@@ -377,6 +465,8 @@ impl VPKTree {
             Ext::Icns => Some(&self.icns),
             Ext::Bmp => Some(&self.bmp),
             Ext::Dat => Some(&self.dat),
+            Ext::Wav => Some(&self.wav),
+            Ext::Mp3 => Some(&self.mp3),
             Ext::Other(ext) => self.other.get(ext.as_ref()),
         }
     }
@@ -432,6 +522,10 @@ impl VPKTree {
         match ext {
             Ext::Vmt => self.vmt.insert(re, entry),
             Ext::Vtf => self.vtf.insert(re, entry),
+            Ext::Vtx => self.vtx.insert(re, entry),
+            Ext::Vvd => self.vvd.insert(re, entry),
+            Ext::Phy => self.phy.insert(re, entry),
+            Ext::Res => self.res.insert(re, entry),
             Ext::Mdl => self.mdl.insert(re, entry),
             Ext::Scr => self.scr.insert(re, entry),
             Ext::Xsc => self.xsc.insert(re, entry),
@@ -442,6 +536,8 @@ impl VPKTree {
             Ext::Icns => self.icns.insert(re, entry),
             Ext::Bmp => self.bmp.insert(re, entry),
             Ext::Dat => self.dat.insert(re, entry),
+            Ext::Wav => self.wav.insert(re, entry),
+            Ext::Mp3 => self.mp3.insert(re, entry),
             Ext::Other(ext) => {
                 if let Some(map) = self.other.get_mut(ext.as_ref()) {
                     map.insert(re, entry);
@@ -486,7 +582,10 @@ pub fn skip_cstring(reader: &mut Cursor<&[u8]>) -> Result<Range<usize>, Error> {
 mod tests {
     use std::io::Cursor;
 
-    use crate::{vpk::read_cstring, VPK};
+    use crate::{
+        vpk::{read_cstring, ProbableKind},
+        VPK,
+    };
 
     #[test]
     fn test_read_cstring_with_null_byte() {
@@ -513,7 +612,32 @@ mod tests {
         if let Ok(file_path) = std::env::var("VPK_FILE") {
             let file_path = std::path::Path::new(&file_path);
 
-            let _res = VPK::read(file_path).unwrap();
+            let res = VPK::read(file_path, ProbableKind::Tf2Misc).unwrap();
+
+            println!("Res entry counts");
+            println!("vmt: {}", res.tree.vmt.len());
+            println!("vtf: {}", res.tree.vtf.len());
+            println!("vtx: {}", res.tree.vtx.len());
+            println!("vvd: {}", res.tree.vvd.len());
+            println!("phy: {}", res.tree.phy.len());
+            println!("res: {}", res.tree.res.len());
+            println!("mdl: {}", res.tree.mdl.len());
+            println!("scr: {}", res.tree.scr.len());
+            println!("xsc: {}", res.tree.xsc.len());
+            println!("gam: {}", res.tree.gam.len());
+            println!("lst: {}", res.tree.lst.len());
+            println!("dsp: {}", res.tree.dsp.len());
+            println!("ico: {}", res.tree.ico.len());
+            println!("icns: {}", res.tree.icns.len());
+            println!("bmp: {}", res.tree.bmp.len());
+            println!("dat: {}", res.tree.dat.len());
+            // other entry counts per ext
+            println!("other: {}", res.tree.other.len());
+            for (ext, map) in &res.tree.other {
+                println!("\t {}: {}", String::from_utf8_lossy(ext), map.len());
+            }
+
+            panic!();
         }
     }
 }

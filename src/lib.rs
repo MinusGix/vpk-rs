@@ -7,6 +7,7 @@ pub use crate::vpk::VPK;
 
 use std::path::Path;
 use thiserror::Error;
+use vpk::ProbableKind;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -26,9 +27,9 @@ pub enum Error {
     MalformedIndex,
 }
 
-pub fn from_path(path: impl AsRef<Path>) -> Result<VPK, Error> {
+pub fn from_path(path: impl AsRef<Path>, probable_kind: ProbableKind) -> Result<VPK, Error> {
     let path = path.as_ref();
-    let vpk = VPK::read(path)?;
+    let vpk = VPK::read(path, probable_kind)?;
 
     Ok(vpk)
 }
