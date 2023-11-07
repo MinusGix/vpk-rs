@@ -12,6 +12,8 @@ use thiserror::Error;
 pub enum Error {
     #[error("Error while trying to read data: {0}")]
     ReadError(#[from] std::io::Error),
+    #[error("Expected null terminator at end of cstring")]
+    ExpectedNullTerminator,
     #[error("Error while trying to read data: {0}")]
     BinReadError(#[from] binread::Error),
     #[error("Invalid signature, provided file is not a VPK file")]

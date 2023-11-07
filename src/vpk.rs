@@ -253,7 +253,6 @@ impl VPK {
 
                     reader.seek(SeekFrom::Current(dir_entry.preload_length as i64))?;
 
-                    // vpk.tree.insert(&ext, path.clone(), name, vpk_entry);
                     vpk.tree
                         .insert(file.clone(), &ext, path.clone(), name, vpk_entry);
 
@@ -461,51 +460,26 @@ impl VPKTree {
 }
 
 fn read_cstring<'a>(reader: &mut Cursor<&'a [u8]>) -> Result<&'a [u8], Error> {
-    // Since we know it is a cursor, we can just get the current position
-    // and then search for the next null byte
-    let start = reader.position() as usize;
-    let data = reader.get_ref();
-    let end = data[start..]
-        .iter()
-        .position(|&x| x == 0)
-        .map(|x| start + x)
-        .ok_or_else(|| {
-            Error::ReadError(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
-                "Could not find null byte",
-            ))
-        })?;
-
-    let string = &data[start..end];
-
-    // Advance past the cstring
-    // end will be at the null byte
-    reader.seek(SeekFrom::Start((end + 1) as u64))?;
-
-    Ok(string)
+    let res = skip_cstring(reader)?;
+    Ok(&reader.get_ref()[res])
 }
 
-fn skip_cstring(reader: &mut Cursor<&[u8]>) -> Result<Range<usize>, Error> {
-    // Since we know it is a cursor, we can just get the current position
-    // and then search for the next null byte
+/// Skips over a cstring, giving the range of bytes that were skipped, not including the null byte.
+/// This is only pub so it can be used in benchmarks.
+#[doc(hidden)]
+pub fn skip_cstring(reader: &mut Cursor<&[u8]>) -> Result<Range<usize>, Error> {
     let start = reader.position() as usize;
     let data = reader.get_ref();
-    let end = data[start..]
-        .iter()
-        .position(|&x| x == 0)
-        .map(|x| start + x)
-        .ok_or_else(|| {
-            Error::ReadError(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
-                "Could not find null byte",
-            ))
-        })?;
+    let v = memchr::memchr(0, &data[start..]).ok_or_else(|| {
+        Error::ReadError(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "Could not find null byte",
+        ))
+    })?;
 
-    // Advance past the cstring
-    // end will be at the null byte
-    reader.seek(SeekFrom::Start((end + 1) as u64))?;
+    reader.seek(SeekFrom::Start((start + v + 1) as u64))?;
 
-    Ok(start..end)
+    Ok(start..start + v)
 }
 
 #[cfg(test)]
