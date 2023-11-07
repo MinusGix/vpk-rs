@@ -2,12 +2,13 @@ use crate::entry::*;
 use crate::structs::*;
 use crate::Error;
 
+use binread::BinReaderExt;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufReader, Read, Seek, SeekFrom};
+
+use std::io::Cursor;
+use std::io::{Read, Seek, SeekFrom};
 use std::mem;
 use std::path::Path;
-use binread::BinReaderExt;
 
 const VPK_SIGNATURE: u32 = 0x55aa1234;
 const VPK_SELF_HASHES_LENGTH: u32 = 48;
@@ -23,9 +24,10 @@ pub struct VPK {
 
 impl VPK {
     pub fn read(dir_path: &Path) -> Result<VPK, Error> {
-        let file = File::open(dir_path)?;
+        // Read the file into memory. Dir vpks are usually pretty small.
+        let file = std::fs::read(dir_path)?;
 
-        let mut reader = BufReader::new(file);
+        let mut reader = Cursor::new(&file);
 
         // Read main VPK header
         let header: VPKHeader = reader.read_le()?;
@@ -128,7 +130,7 @@ impl VPK {
     }
 }
 
-fn read_cstring(reader: &mut BufReader<File>) -> Result<String, Error> {
+fn read_cstring(reader: &mut impl Read) -> Result<String, Error> {
     let mut string: String = String::new();
 
     let mut buf = [0u8];
