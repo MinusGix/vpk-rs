@@ -13,9 +13,9 @@ use indexmap::Equivalent;
 use indexmap::IndexMap;
 use std::borrow::Cow;
 
+use std::collections::HashMap;
 use std::hash::Hash;
 use std::io::Cursor;
-use std::io::Read;
 use std::io::{Seek, SeekFrom};
 use std::mem;
 use std::path::Path;
@@ -171,8 +171,12 @@ impl VPK {
         let root_str: Arc<str> = Arc::from("");
 
         // Read index tree
-        let mut avg_name = 0.0;
-        let mut name_count = 0;
+        // let mut avg_name = 0.0;
+        // let mut name_count = 0;
+
+        // Cache the archive paths for each archive index
+        // This lets us share them, and also avoid formatting every time
+        let mut archive_paths: HashMap<u16, Arc<str>> = HashMap::with_capacity(32);
 
         let mut avg_path = 0.0;
         let mut path_count = 0;
@@ -182,6 +186,9 @@ impl VPK {
 
         let mut avg_path_count = 0.0;
         let mut path_count_count = 0;
+
+        // TODO: don't require this to be a str? Weird systems might have bad utf8 in the paths
+        let dir_path = dir_path.to_str().unwrap();
         loop {
             let ext_start = std::time::Instant::now();
             let ext = read_cstring(&mut reader)?;
@@ -211,7 +218,7 @@ impl VPK {
                 };
 
                 loop {
-                    let name_start = std::time::Instant::now();
+                    // let name_start = std::time::Instant::now();
                     let name = read_cstring(&mut reader)?;
                     if name.is_empty() {
                         break;
@@ -229,9 +236,15 @@ impl VPK {
                         dir_entry.archive_offset += vpk.header_length + vpk.header.tree_length;
                     }
 
-                    let _dir_path = dir_path.to_str().unwrap();
-                    let archive_path =
-                        _dir_path.replace("dir.", &format!("{:03}.", dir_entry.archive_index));
+                    let archive_path = archive_paths
+                        .entry(dir_entry.archive_index)
+                        .or_insert_with(|| {
+                            let archive_path = dir_path
+                                .replace("dir.", &format!("{:03}.", dir_entry.archive_index));
+                            Arc::from(archive_path)
+                        })
+                        .clone();
+
                     let vpk_entry = VPKEntry {
                         dir_entry,
                         archive_path,
@@ -243,10 +256,10 @@ impl VPK {
 
                     vpk.tree.insert(&ext, path.clone(), name, vpk_entry);
 
-                    let name_end = std::time::Instant::now();
-                    let name_time = name_end - name_start;
-                    name_count += 1;
-                    avg_name += (name_time.as_micros() as f32 - avg_name) / name_count as f32;
+                    // let name_end = std::time::Instant::now();
+                    // let name_time = name_end - name_start;
+                    // name_count += 1;
+                    // avg_name += (name_time.as_micros() as f32 - avg_name) / name_count as f32;
                 }
 
                 let path_end = std::time::Instant::now();
