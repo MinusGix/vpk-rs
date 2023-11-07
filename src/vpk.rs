@@ -15,6 +15,7 @@ use std::borrow::Cow;
 
 use std::hash::Hash;
 use std::io::Cursor;
+use std::io::Read;
 use std::io::{Seek, SeekFrom};
 use std::mem;
 use std::path::Path;
@@ -103,6 +104,8 @@ impl<'a> Ext<'a> {
     }
 }
 
+// TODO: optionally check checksum
+
 #[derive(Clone)]
 pub struct VPK {
     pub header_length: u32,
@@ -168,7 +171,19 @@ impl VPK {
         let root_str: Arc<str> = Arc::from("");
 
         // Read index tree
+        let mut avg_name = 0.0;
+        let mut name_count = 0;
+
+        let mut avg_path = 0.0;
+        let mut path_count = 0;
+
+        let mut avg_ext = 0.0;
+        let mut ext_count = 0;
+
+        let mut avg_path_count = 0.0;
+        let mut path_count_count = 0;
         loop {
+            let ext_start = std::time::Instant::now();
             let ext = read_cstring(&mut reader)?;
             if ext.is_empty() {
                 break;
@@ -176,11 +191,15 @@ impl VPK {
 
             let ext = Ext::from_ext_str(ext);
 
+            let mut p_count = 0;
             loop {
+                let path_start = std::time::Instant::now();
                 let path = read_cstring(&mut reader)?;
                 if path.is_empty() {
                     break;
                 }
+
+                p_count += 1;
 
                 // TODO: Should we also lowercase non-ascii text? Windows
                 // does that.
@@ -192,6 +211,7 @@ impl VPK {
                 };
 
                 loop {
+                    let name_start = std::time::Instant::now();
                     let name = read_cstring(&mut reader)?;
                     if name.is_empty() {
                         break;
@@ -219,10 +239,37 @@ impl VPK {
                         preload_start: reader.position() as usize,
                     };
 
+                    reader.seek(SeekFrom::Current(dir_entry.preload_length as i64))?;
+
                     vpk.tree.insert(&ext, path.clone(), name, vpk_entry);
+
+                    let name_end = std::time::Instant::now();
+                    let name_time = name_end - name_start;
+                    name_count += 1;
+                    avg_name += (name_time.as_micros() as f32 - avg_name) / name_count as f32;
                 }
+
+                let path_end = std::time::Instant::now();
+                let path_time = path_end - path_start;
+                path_count += 1;
+                avg_path += (path_time.as_micros() as f32 - avg_path) / path_count as f32;
+
+                path_count_count += 1;
+                avg_path_count += (p_count as f32 - avg_path_count) / path_count_count as f32;
             }
+
+            let ext_end = std::time::Instant::now();
+            let ext_time = ext_end - ext_start;
+            ext_count += 1;
+            avg_ext += (ext_time.as_micros() as f32 - avg_ext) / ext_count as f32;
         }
+
+        // eprintln!("avg_ext: {} ms", avg_ext / 1000.0);
+        // // microseconds
+        // eprintln!("avg_path {}", avg_path);
+        // eprintln!("avg_name {}", avg_name);
+
+        // eprintln!("avg_path_count {}", avg_path_count);
 
         vpk.data = file;
 
