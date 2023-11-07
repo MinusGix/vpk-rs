@@ -1,3 +1,4 @@
+pub mod access;
 pub mod entry;
 pub mod structs;
 pub mod vpk;
