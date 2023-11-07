@@ -42,23 +42,23 @@ pub enum Ext<'a> {
     Icns,
     Bmp,
     Dat,
-    Other(Cow<'a, str>),
+    Other(Cow<'a, [u8]>),
 }
 impl<'a> Ext<'a> {
-    pub fn as_str(&self) -> &str {
+    pub fn as_slice(&self) -> &[u8] {
         match self {
-            Ext::Vmt => "vmt",
-            Ext::Vtf => "vtf",
-            Ext::Mdl => "mdl",
-            Ext::Scr => "scr",
-            Ext::Xsc => "xsc",
-            Ext::Gam => "gam",
-            Ext::Lst => "lst",
-            Ext::Dsp => "dsp",
-            Ext::Ico => "ico",
-            Ext::Icns => "icns",
-            Ext::Bmp => "bmp",
-            Ext::Dat => "dat",
+            Ext::Vmt => b"vmt",
+            Ext::Vtf => b"vtf",
+            Ext::Mdl => b"mdl",
+            Ext::Scr => b"scr",
+            Ext::Xsc => b"xsc",
+            Ext::Gam => b"gam",
+            Ext::Lst => b"lst",
+            Ext::Dsp => b"dsp",
+            Ext::Ico => b"ico",
+            Ext::Icns => b"icns",
+            Ext::Bmp => b"bmp",
+            Ext::Dat => b"dat",
             Ext::Other(s) => s.as_ref(),
         }
     }
@@ -81,25 +81,25 @@ impl<'a> Ext<'a> {
         }
     }
 
-    pub fn from_ext_str(s: &'a str) -> Ext<'a> {
-        let s = if s.chars().all(|c| c.is_ascii_lowercase()) {
+    pub fn from_ext_slice(s: &'a [u8]) -> Ext<'a> {
+        let s = if s.iter().all(|c| c.is_ascii_lowercase()) {
             Cow::Borrowed(s)
         } else {
             Cow::Owned(s.to_ascii_lowercase())
         };
         match s.as_ref() {
-            "vmt" => Ext::Vmt,
-            "vtf" => Ext::Vtf,
-            "mdl" => Ext::Mdl,
-            "scr" => Ext::Scr,
-            "xsc" => Ext::Xsc,
-            "gam" => Ext::Gam,
-            "lst" => Ext::Lst,
-            "dsp" => Ext::Dsp,
-            "ico" => Ext::Ico,
-            "icns" => Ext::Icns,
-            "bmp" => Ext::Bmp,
-            "dat" => Ext::Dat,
+            b"vmt" => Ext::Vmt,
+            b"vtf" => Ext::Vtf,
+            b"mdl" => Ext::Mdl,
+            b"scr" => Ext::Scr,
+            b"xsc" => Ext::Xsc,
+            b"gam" => Ext::Gam,
+            b"lst" => Ext::Lst,
+            b"dsp" => Ext::Dsp,
+            b"ico" => Ext::Ico,
+            b"icns" => Ext::Icns,
+            b"bmp" => Ext::Bmp,
+            b"dat" => Ext::Dat,
             _ => Ext::Other(s),
         }
     }
@@ -197,7 +197,7 @@ impl VPK {
                 break;
             }
 
-            let ext = Ext::from_ext_str(ext);
+            let ext = Ext::from_ext_slice(ext);
 
             // let mut p_count = 0;
             loop {
@@ -361,7 +361,7 @@ pub struct VPKTree {
     pub bmp: DirFileEntryMap,
     pub dat: DirFileEntryMap,
     /// (ext, dir file entry map)
-    pub other: IndexMap<String, DirFileEntryMap>,
+    pub other: IndexMap<Vec<u8>, DirFileEntryMap>,
 }
 impl VPKTree {
     pub fn for_ext(&self, ext: &Ext<'_>) -> Option<&DirFileEntryMap> {
@@ -449,7 +449,7 @@ impl VPKTree {
                 } else {
                     let mut map = DirFileEntryMap::default();
                     map.insert(re, entry);
-                    self.other.insert(ext.as_ref().to_string(), map);
+                    self.other.insert(ext.as_ref().to_vec(), map);
                 }
 
                 // for some reason match requires the same return type despite being used as a
@@ -460,7 +460,7 @@ impl VPKTree {
     }
 }
 
-fn read_cstring<'a>(reader: &mut Cursor<&'a [u8]>) -> Result<&'a str, Error> {
+fn read_cstring<'a>(reader: &mut Cursor<&'a [u8]>) -> Result<&'a [u8], Error> {
     // Since we know it is a cursor, we can just get the current position
     // and then search for the next null byte
     let start = reader.position() as usize;
@@ -476,13 +476,7 @@ fn read_cstring<'a>(reader: &mut Cursor<&'a [u8]>) -> Result<&'a str, Error> {
             ))
         })?;
 
-    // let string = String::from_utf8_lossy(&data[start..end]).to_string();
-    let string = std::str::from_utf8(&data[start..end]).map_err(|_| {
-        Error::ReadError(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "Could not parse cstring",
-        ))
-    })?;
+    let string = &data[start..end];
 
     // Advance past the cstring
     // end will be at the null byte
@@ -528,7 +522,7 @@ mod tests {
         let result = read_cstring(&mut cursor).unwrap();
         let remaining_data = &data[cursor.position() as usize..];
 
-        assert_eq!(result, "hello");
+        assert_eq!(result, b"hello");
         assert_eq!(remaining_data, b"world");
     }
 
