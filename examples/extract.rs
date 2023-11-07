@@ -3,7 +3,7 @@ extern crate vpk;
 use std::env;
 use std::fs;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::Path;
 use std::vec::Vec;
 
@@ -20,12 +20,12 @@ fn main() -> std::io::Result<()> {
         panic!("Given export path is not directory or doesn't exists");
     }
 
-    let mut vpk_file = match vpk::from_path(&args[1]) {
+    let vpk_file = match vpk::from_path(&args[1]) {
         Err(e) => panic!("Error while open file {}, err {}", &args[1], e),
         Ok(vpk_file) => vpk_file,
     };
 
-    for (file, vpk_entry) in vpk_file.tree.iter_mut() {
+    for (file, vpk_entry) in vpk_file.tree.iter() {
         println!(
             "Extract {}, archive index {}...",
             file, vpk_entry.dir_entry.archive_index
@@ -33,16 +33,7 @@ fn main() -> std::io::Result<()> {
         let file_path = Path::new(file);
         fs::create_dir_all(path.join(&file_path.parent().unwrap()))?;
 
-        let mut buf_len: usize = 0;
-        if vpk_entry.dir_entry.archive_index == 0x7fff {
-            buf_len = vpk_entry.dir_entry.preload_length as usize;
-        } else {
-            buf_len = vpk_entry.dir_entry.file_length as usize;
-        }
-
-        let mut buf = vec![0u8; buf_len];
-
-        vpk_entry.read(&mut buf)?;
+        let buf = vpk_entry.get(&vpk_file)?;
 
         let mut out_buf = File::create(&path.join(&file_path))?;
         out_buf.write(&buf)?;

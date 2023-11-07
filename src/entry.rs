@@ -1,43 +1,37 @@
+use binread::BinRead;
 use std::borrow::Cow;
 use std::fs::File;
 use std::io::{Error, Read, Seek, SeekFrom};
-use binread::BinRead;
+use std::ops::Range;
+
+use crate::VPK;
 
 #[derive(Debug)]
 pub struct VPKEntry {
     pub dir_entry: VPKDirectoryEntry,
     pub archive_path: String,
-    pub preload_data: Vec<u8>,
+    pub preload_start: usize,
 }
 
 impl VPKEntry {
-    pub fn get(&self) -> Result<Cow<[u8]>, Error> {
+    pub fn preload_interval(&self) -> Range<usize> {
+        let start = self.preload_start;
+        let end = start + self.dir_entry.preload_length as usize;
+        start..end
+    }
+
+    pub fn get<'v>(&self, parent: &'v VPK) -> Result<Cow<'v, [u8]>, Error> {
         if self.dir_entry.archive_index == 0x7fff {
-            // Return internal preload_data
-            return Ok(Cow::Borrowed(&self.preload_data));
+            let preload_data = &parent.data[self.preload_interval()];
+            return Ok(Cow::Borrowed(preload_data));
         }
 
         let mut buf = vec![0; self.dir_entry.file_length as usize];
         let mut file = File::open(&self.archive_path)?;
         file.seek(SeekFrom::Start(self.dir_entry.archive_offset as u64))?;
-        file.take(self.dir_entry.file_length as u64).read(&mut buf)?;
+        file.take(self.dir_entry.file_length as u64)
+            .read(&mut buf)?;
         Ok(Cow::Owned(buf))
-    }
-}
-
-impl Read for VPKEntry {
-    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
-        if self.dir_entry.archive_index == 0x7fff {
-            // Return internal preload_data
-            buf.copy_from_slice(&self.preload_data);
-            return Ok(buf.len());
-        }
-
-        let mut file = File::open(&self.archive_path)?;
-        file.seek(SeekFrom::Start(self.dir_entry.archive_offset as u64))?;
-        file.take(self.dir_entry.file_length as u64).read(buf)?;
-
-        Ok(self.dir_entry.file_length as usize)
     }
 }
 
@@ -49,4 +43,19 @@ pub struct VPKDirectoryEntry {
     pub archive_offset: u32,
     pub file_length: u32,
     pub suffix: u16,
+}
+
+/// A handle holds both the [`VPK`] and a held [`VPKEntry`].
+/// This is useful for [`VPKEntry::get`] where the [`VPKEntry`] needs to know
+/// the parent data.
+#[derive(Debug)]
+pub struct VPKEntryHandle<'a> {
+    /// The [`VPK`] that holds this [`VPKEntry`]
+    pub vpk: &'a VPK,
+    pub entry: &'a VPKEntry,
+}
+impl<'a> VPKEntryHandle<'a> {
+    pub fn get(&self) -> Result<Cow<'a, [u8]>, Error> {
+        self.entry.get(self.vpk)
+    }
 }

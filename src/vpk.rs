@@ -20,6 +20,10 @@ pub struct VPK {
     pub header_v2: Option<VPKHeaderV2>,
     pub header_v2_checksum: Option<VPKHeaderV2Checksum>,
     pub tree: HashMap<String, VPKEntry>,
+
+    /// The data in a dir is usually pretty small, so just keeping the loaded file
+    /// is cheaper than reading out isolated preload data vecs and the like.
+    pub(crate) data: Vec<u8>,
 }
 
 impl VPK {
@@ -45,6 +49,7 @@ impl VPK {
             header_v2: None,
             header_v2_checksum: None,
             tree: HashMap::new(),
+            data: Vec::new(),
         };
 
         if vpk.header.version == 2 {
@@ -105,20 +110,15 @@ impl VPK {
                             vpk.header_length + vpk.header.tree_length + dir_entry.archive_offset;
                     }
 
-                    let preload_length = dir_entry.preload_length;
                     let _dir_path = dir_path.to_str().unwrap();
                     let archive_path =
                         _dir_path.replace("dir.", &format!("{:03}.", dir_entry.archive_index));
-                    let mut vpk_entry = VPKEntry {
+                    let vpk_entry = VPKEntry {
                         dir_entry,
                         archive_path,
-                        preload_data: vec![0u8; preload_length as usize],
+                        // This can't be >usize becuase we're reading from a vec
+                        preload_start: reader.position() as usize,
                     };
-
-                    reader
-                        .by_ref()
-                        .take(vpk_entry.dir_entry.preload_length as u64)
-                        .read_exact(&mut vpk_entry.preload_data)?;
 
                     vpk.tree
                         .insert(format!("{}{}.{}", path, name, ext), vpk_entry);
@@ -126,7 +126,21 @@ impl VPK {
             }
         }
 
+        vpk.data = file;
+
         Ok(vpk)
+    }
+
+    pub fn iter_entries(&self) -> impl Iterator<Item = (&str, VPKEntryHandle<'_>)> {
+        self.tree.iter().map(move |(key, v)| {
+            (
+                key.as_str(),
+                VPKEntryHandle {
+                    vpk: self,
+                    entry: v,
+                },
+            )
+        })
     }
 }
 
