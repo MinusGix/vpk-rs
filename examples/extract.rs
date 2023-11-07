@@ -25,19 +25,20 @@ fn main() -> std::io::Result<()> {
         Ok(vpk_file) => vpk_file,
     };
 
-    for (file, vpk_entry) in vpk_file.tree.iter() {
-        println!(
-            "Extract {}, archive index {}...",
-            file, vpk_entry.dir_entry.archive_index
-        );
-        let file_path = Path::new(file);
-        fs::create_dir_all(path.join(file_path.parent().unwrap()))?;
+    // TODO: fix this
+    // for (file, vpk_entry) in vpk_file.tree.iter() {
+    //     println!(
+    //         "Extract {}, archive index {}...",
+    //         file, vpk_entry.dir_entry.archive_index
+    //     );
+    //     let file_path = Path::new(file);
+    //     fs::create_dir_all(path.join(file_path.parent().unwrap()))?;
 
-        let buf = vpk_entry.get(&vpk_file)?;
+    //     let buf = vpk_entry.get(&vpk_file)?;
 
-        let mut out_buf = File::create(&path.join(file_path))?;
-        out_buf.write_all(&buf)?;
-    }
+    //     let mut out_buf = File::create(&path.join(file_path))?;
+    //     out_buf.write_all(&buf)?;
+    // }
 
     Ok(())
 }

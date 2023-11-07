@@ -1,13 +1,13 @@
 use binread::BinRead;
 
-#[derive(Debug, BinRead)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, BinRead)]
 pub struct VPKHeader {
     pub signature: u32,
     pub version: u32,
     pub tree_length: u32,
 }
 
-#[derive(Debug, BinRead)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, BinRead)]
 pub struct VPKHeaderV2 {
     pub embed_chunk_length: u32,
     pub chunk_hashes_length: u32,
@@ -15,7 +15,7 @@ pub struct VPKHeaderV2 {
     pub signature_length: u32,
 }
 
-#[derive(Debug, BinRead)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, BinRead)]
 pub struct VPKHeaderV2Checksum {
     pub tree_checksum: u128,
     pub chunk_hashes_checksum: u128,

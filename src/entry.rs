@@ -6,7 +6,7 @@ use std::ops::Range;
 
 use crate::VPK;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VPKEntry {
     pub dir_entry: VPKDirectoryEntry,
     pub archive_path: String,
@@ -34,7 +34,7 @@ impl VPKEntry {
     }
 }
 
-#[derive(Debug, BinRead)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, BinRead)]
 pub struct VPKDirectoryEntry {
     pub crc32: u32,
     pub preload_length: u16,

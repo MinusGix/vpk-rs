@@ -10,3 +10,4 @@ edition = "2018"
 [dependencies]
 thiserror = "1.0.20"
 binread = "1.0.1"
+indexmap = "2.1.0"
