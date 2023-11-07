@@ -18,6 +18,7 @@ use std::hash::Hash;
 use std::io::Cursor;
 use std::io::{Seek, SeekFrom};
 use std::mem;
+use std::ops::Range;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -105,6 +106,8 @@ impl<'a> Ext<'a> {
 }
 
 // TODO: optionally check checksum
+// TODO: Should we also lowercase non-ascii text? Windows
+// does that.
 
 #[derive(Clone)]
 pub struct VPK {
@@ -112,19 +115,19 @@ pub struct VPK {
     pub header: VPKHeader,
     pub header_v2: Option<VPKHeaderV2>,
     pub header_v2_checksum: Option<VPKHeaderV2Checksum>,
-    pub tree: VPKTree,
+    tree: VPKTree,
 
     /// The data in a dir is usually pretty small, so just keeping the loaded file
     /// is cheaper than reading out isolated preload data vecs and the like.
-    pub(crate) data: Vec<u8>,
+    pub(crate) data: Arc<[u8]>,
 }
 
 impl VPK {
     pub fn read(dir_path: &Path) -> Result<VPK, Error> {
         // Read the file into memory. Dir vpks are usually pretty small.
-        let file = std::fs::read(dir_path)?;
+        let file: Arc<[u8]> = Arc::from(std::fs::read(dir_path)?);
 
-        let mut reader = Cursor::new(file.as_slice());
+        let mut reader = Cursor::new(file.as_ref());
 
         // Read main VPK header
         let header: VPKHeader = reader.read_le()?;
@@ -142,7 +145,7 @@ impl VPK {
             header_v2: None,
             header_v2_checksum: None,
             tree: VPKTree::default(),
-            data: Vec::new(),
+            data: file.clone(),
         };
 
         if vpk.header.version == 2 {
@@ -168,8 +171,6 @@ impl VPK {
             reader.seek(SeekFrom::Start(header_length as u64))?;
         }
 
-        let root_str: Arc<str> = Arc::from("");
-
         // Read index tree
         // let mut avg_name = 0.0;
         // let mut name_count = 0;
@@ -178,19 +179,19 @@ impl VPK {
         // This lets us share them, and also avoid formatting every time
         let mut archive_paths: HashMap<u16, Arc<str>> = HashMap::with_capacity(32);
 
-        let mut avg_path = 0.0;
-        let mut path_count = 0;
+        // let mut avg_path = 0.0;
+        // let mut path_count = 0;
 
-        let mut avg_ext = 0.0;
-        let mut ext_count = 0;
+        // let mut avg_ext = 0.0;
+        // let mut ext_count = 0;
 
-        let mut avg_path_count = 0.0;
-        let mut path_count_count = 0;
+        // let mut avg_path_count = 0.0;
+        // let mut path_count_count = 0;
 
         // TODO: don't require this to be a str? Weird systems might have bad utf8 in the paths
         let dir_path = dir_path.to_str().unwrap();
         loop {
-            let ext_start = std::time::Instant::now();
+            // let ext_start = std::time::Instant::now();
             let ext = read_cstring(&mut reader)?;
             if ext.is_empty() {
                 break;
@@ -198,33 +199,37 @@ impl VPK {
 
             let ext = Ext::from_ext_str(ext);
 
-            let mut p_count = 0;
+            // let mut p_count = 0;
             loop {
-                let path_start = std::time::Instant::now();
+                // let path_start = std::time::Instant::now();
+
+                let path_pos = reader.position();
                 let path = read_cstring(&mut reader)?;
                 if path.is_empty() {
                     break;
                 }
 
-                p_count += 1;
+                let path_end = reader.position() - 1;
 
-                // TODO: Should we also lowercase non-ascii text? Windows
-                // does that.
-                let path: Arc<str> = if path == " " {
-                    root_str.clone()
-                } else {
-                    let path = path.to_ascii_lowercase();
-                    Arc::from(path)
-                };
+                // p_count += 1;
 
                 loop {
                     // let name_start = std::time::Instant::now();
+                    let name_pos = reader.position();
                     let name = read_cstring(&mut reader)?;
                     if name.is_empty() {
                         break;
                     }
 
-                    let name = name.to_lowercase();
+                    let name_end = reader.position() - 1;
+
+                    // TODO: it might be possible to instead not do any str conversion
+                    // and use the `&str`, or rather perhaps some reference into `&data`
+                    // to avoid the conversion + allocation when this is initialized.
+                    // But that would complicate things a good bit..
+                    // Like, we'd need to somehow be able to get the values for hashing in the
+                    // `DirFile` and also for comparison..
+                    // let name = name.to_lowercase();
 
                     let mut dir_entry: VPKDirectoryEntry = reader.read_le()?;
 
@@ -254,7 +259,14 @@ impl VPK {
 
                     reader.seek(SeekFrom::Current(dir_entry.preload_length as i64))?;
 
-                    vpk.tree.insert(&ext, path.clone(), name, vpk_entry);
+                    // vpk.tree.insert(&ext, path.clone(), name, vpk_entry);
+                    vpk.tree.insert(
+                        file.clone(),
+                        &ext,
+                        path_pos as usize..path_end as usize,
+                        name_pos as usize..name_end as usize,
+                        vpk_entry,
+                    );
 
                     // let name_end = std::time::Instant::now();
                     // let name_time = name_end - name_start;
@@ -262,19 +274,19 @@ impl VPK {
                     // avg_name += (name_time.as_micros() as f32 - avg_name) / name_count as f32;
                 }
 
-                let path_end = std::time::Instant::now();
-                let path_time = path_end - path_start;
-                path_count += 1;
-                avg_path += (path_time.as_micros() as f32 - avg_path) / path_count as f32;
+                // let path_end = std::time::Instant::now();
+                // let path_time = path_end - path_start;
+                // path_count += 1;
+                // avg_path += (path_time.as_micros() as f32 - avg_path) / path_count as f32;
 
-                path_count_count += 1;
-                avg_path_count += (p_count as f32 - avg_path_count) / path_count_count as f32;
+                // path_count_count += 1;
+                // avg_path_count += (p_count as f32 - avg_path_count) / path_count_count as f32;
             }
 
-            let ext_end = std::time::Instant::now();
-            let ext_time = ext_end - ext_start;
-            ext_count += 1;
-            avg_ext += (ext_time.as_micros() as f32 - avg_ext) / ext_count as f32;
+            // let ext_end = std::time::Instant::now();
+            // let ext_time = ext_end - ext_start;
+            // ext_count += 1;
+            // avg_ext += (ext_time.as_micros() as f32 - avg_ext) / ext_count as f32;
         }
 
         // eprintln!("avg_ext: {} ms", avg_ext / 1000.0);
@@ -283,8 +295,6 @@ impl VPK {
         // eprintln!("avg_name {}", avg_name);
 
         // eprintln!("avg_path_count {}", avg_path_count);
-
-        vpk.data = file;
 
         Ok(vpk)
     }
@@ -421,8 +431,15 @@ impl VPKTree {
         self.get_direct(ext, DirFileRefLowercase::new(dir, filename))
     }
 
-    pub fn insert(&mut self, ext: &Ext<'_>, dir: Arc<str>, filename: String, entry: VPKEntry) {
-        let re = DirFile::new(dir, filename.to_string());
+    fn insert(
+        &mut self,
+        data: Arc<[u8]>,
+        ext: &Ext<'_>,
+        dir: Range<usize>,
+        filename: Range<usize>,
+        entry: VPKEntry,
+    ) {
+        let re = DirFile::new(data, dir, filename);
 
         match ext {
             Ext::Vmt => self.vmt.insert(re, entry),
@@ -489,7 +506,7 @@ fn read_cstring<'a>(reader: &mut Cursor<&'a [u8]>) -> Result<&'a str, Error> {
 mod tests {
     use std::io::Cursor;
 
-    use crate::vpk::read_cstring;
+    use crate::{vpk::read_cstring, VPK};
 
     #[test]
     fn test_read_cstring_with_null_byte() {
@@ -509,5 +526,14 @@ mod tests {
         let mut cursor = Cursor::new(data.as_ref());
 
         assert!(read_cstring(&mut cursor).is_err());
+    }
+
+    #[test]
+    fn test_vpk_read() {
+        if let Ok(file_path) = std::env::var("VPK_FILE") {
+            let file_path = std::path::Path::new(&file_path);
+
+            let _res = VPK::read(file_path).unwrap();
+        }
     }
 }

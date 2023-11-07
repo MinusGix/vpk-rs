@@ -1,5 +1,6 @@
 use std::{
     hash::{Hash, Hasher},
+    ops::Range,
     sync::Arc,
 };
 
@@ -34,14 +35,28 @@ fn hash_str_as_lowercase<H: Hasher>(state: &mut H, s: &str) {
 
 /// A reference to a specific (dir, filename), without the extension.  
 /// This should be lowercase!
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct DirFile {
-    pub dir: Arc<str>,
-    pub filename: String,
+    /// A copy of the data, this lets us avoid keeping a copy of `dir` or `filename`
+    data: Arc<[u8]>,
+    dir: Range<usize>,
+    filename: Range<usize>,
 }
 impl DirFile {
-    pub fn new(dir: Arc<str>, filename: String) -> DirFile {
-        DirFile { dir, filename }
+    pub fn new(data: Arc<[u8]>, dir: Range<usize>, filename: Range<usize>) -> DirFile {
+        DirFile {
+            data,
+            dir,
+            filename,
+        }
+    }
+
+    pub fn dir(&self) -> &[u8] {
+        &self.data[self.dir.clone()]
+    }
+
+    pub fn filename(&self) -> &[u8] {
+        &self.data[self.filename.clone()]
     }
 }
 // We have to implement hash manually to ensure consistent behavior
@@ -49,11 +64,28 @@ impl DirFile {
 // hash for str is not decided.
 impl Hash for DirFile {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        hash_str(state, &self.dir);
-        hash_str(state, &self.filename);
+        hash_bytes_as_lowercase(state, self.dir());
+        state.write_u8(0xff);
+        hash_bytes_as_lowercase(state, self.filename());
+        state.write_u8(0xff);
+    }
+}
+impl PartialEq for DirFile {
+    fn eq(&self, other: &Self) -> bool {
+        self.dir().eq_ignore_ascii_case(other.dir())
+            && self.filename().eq_ignore_ascii_case(other.filename())
+    }
+}
+impl Eq for DirFile {}
+impl std::fmt::Debug for DirFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let dir = std::str::from_utf8(self.dir()).unwrap();
+        let filename = std::str::from_utf8(self.filename()).unwrap();
+        write!(f, "DirFile({:?}, {:?})", dir, filename)
     }
 }
 
+// TODO: we could just get rid of this because with the way DirFile changed, we have to use eq_ignore_ascii_case *anyway*
 /// A reference to a specific (dir, filename), without the extension.  
 /// This should be lowercase!
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,7 +100,11 @@ impl<'a> DirFileRef<'a> {
 }
 impl Equivalent<DirFile> for DirFileRef<'_> {
     fn equivalent(&self, key: &DirFile) -> bool {
-        self.dir == &*key.dir && self.filename == key.filename
+        self.dir.as_bytes().eq_ignore_ascii_case(key.dir())
+            && self
+                .filename
+                .as_bytes()
+                .eq_ignore_ascii_case(key.filename())
     }
 }
 impl Hash for DirFileRef<'_> {
@@ -92,7 +128,11 @@ impl<'a> DirFileRefLowercase<'a> {
 }
 impl Equivalent<DirFile> for DirFileRefLowercase<'_> {
     fn equivalent(&self, key: &DirFile) -> bool {
-        self.dir.eq_ignore_ascii_case(&key.dir) && self.filename.eq_ignore_ascii_case(&key.filename)
+        self.dir.as_bytes().eq_ignore_ascii_case(key.dir())
+            && self
+                .filename
+                .as_bytes()
+                .eq_ignore_ascii_case(key.filename())
     }
 }
 impl Hash for DirFileRefLowercase<'_> {
@@ -137,18 +177,31 @@ impl Equivalent<DirFile> for DirFileBigRef<'_> {
             return false;
         }
 
-        let start_dir = &key.dir[..dir_size];
-        if start_dir != self.dir {
+        let key_dir = key.dir();
+        let start_dir = &key_dir[..dir_size];
+        if !start_dir.eq_ignore_ascii_case(self.dir.as_bytes()) {
             return false;
         }
 
-        let rem_dir = key.dir.get(dir_size..).unwrap_or("");
+        let rem_dir = key_dir.get(dir_size..).unwrap_or(b"");
         if self.extra_dir.is_empty() {
-            rem_dir.is_empty() && self.filename == key.filename
-        } else if let Some(rem_dir) = rem_dir.strip_prefix('/') {
-            rem_dir == self.extra_dir && self.filename == key.filename
+            rem_dir.is_empty()
+                && self
+                    .filename
+                    .as_bytes()
+                    .eq_ignore_ascii_case(key.filename())
+        } else if let Some(rem_dir) = rem_dir.strip_prefix(b"/") {
+            rem_dir.eq_ignore_ascii_case(self.extra_dir.as_bytes())
+                && self
+                    .filename
+                    .as_bytes()
+                    .eq_ignore_ascii_case(key.filename())
         } else {
-            rem_dir == self.extra_dir && self.filename == key.filename
+            rem_dir.eq_ignore_ascii_case(self.extra_dir.as_bytes())
+                && self
+                    .filename
+                    .as_bytes()
+                    .eq_ignore_ascii_case(key.filename())
         }
     }
 }
@@ -197,20 +250,31 @@ impl Equivalent<DirFile> for DirFileBigRefLowercase<'_> {
             return false;
         }
 
-        let start_dir = &key.dir[..dir_size];
-        if !start_dir.eq_ignore_ascii_case(self.dir) {
+        let key_dir = key.dir();
+        let start_dir = &key_dir[..dir_size];
+        if !start_dir.eq_ignore_ascii_case(self.dir.as_bytes()) {
             return false;
         }
 
-        let rem_dir = key.dir.get(dir_size..).unwrap_or("");
+        let rem_dir = key_dir.get(dir_size..).unwrap_or(b"");
         if self.extra_dir.is_empty() {
-            rem_dir.is_empty() && self.filename.eq_ignore_ascii_case(&key.filename)
-        } else if let Some(rem_dir) = rem_dir.strip_prefix('/') {
-            rem_dir.eq_ignore_ascii_case(self.extra_dir)
-                && self.filename.eq_ignore_ascii_case(&key.filename)
+            rem_dir.is_empty()
+                && self
+                    .filename
+                    .as_bytes()
+                    .eq_ignore_ascii_case(key.filename())
+        } else if let Some(rem_dir) = rem_dir.strip_prefix(b"/") {
+            rem_dir.eq_ignore_ascii_case(self.extra_dir.as_bytes())
+                && self
+                    .filename
+                    .as_bytes()
+                    .eq_ignore_ascii_case(key.filename())
         } else {
-            rem_dir.eq_ignore_ascii_case(self.extra_dir)
-                && self.filename.eq_ignore_ascii_case(&key.filename)
+            rem_dir.eq_ignore_ascii_case(self.extra_dir.as_bytes())
+                && self
+                    .filename
+                    .as_bytes()
+                    .eq_ignore_ascii_case(key.filename())
         }
     }
 }
@@ -265,15 +329,20 @@ mod tests {
 
     #[test]
     fn dir_file_big() {
-        let a = DirFile::new(Arc::from("materials"), "concrete".to_string());
+        let data = b"materials;concrete";
+        let data: Arc<[u8]> = Arc::from(*data);
+        let a = DirFile::new(data.clone(), 0..9, 10..18);
         a_eq(&a, DirFileBigRef::new("materials", "concrete"));
         a_eq(&a, DirFileBigRefLowercase::new("materials", "concrete"));
         a_eq(&a, DirFileBigRefLowercase::new("mAterials", "CONCrete"));
 
-        let a = DirFile::new(
-            Arc::from("materials/concrete"),
-            "concretefloor001a".to_string(),
-        );
+        let data = b"materials/concrete;concretefloor001a";
+        let data: Arc<[u8]> = Arc::from(*data);
+        // let a = DirFile::new(
+        //     Arc::from("materials/concrete"),
+        //     "concretefloor001a".to_string(),
+        // );
+        let a = DirFile::new(data.clone(), 0..18, 19..data.len());
 
         a_eq(
             &a,
@@ -313,10 +382,13 @@ mod tests {
             DirFileBigRefLowercase::new("materials/concrete", "concretefloor001a"),
         );
 
-        let a = DirFile::new(
-            Arc::from("materials/concrete/concretefloor001a"),
-            "concretefloor001a".to_string(),
-        );
+        let data = b"materials/concrete/concretefloor001a;concretefloor001a";
+        let data: Arc<[u8]> = Arc::from(*data);
+        // let a = DirFile::new(
+        //     Arc::from("materials/concrete/concretefloor001a"),
+        //     "concretefloor001a".to_string(),
+        // );
+        let a = DirFile::new(data.clone(), 0..36, 37..data.len());
         a_eq(
             &a,
             DirFileBigRef::new("materials", "concrete/concretefloor001a/concretefloor001a"),
@@ -336,10 +408,13 @@ mod tests {
             ),
         );
 
-        let a = DirFile::new(
-            Arc::from("materials/concrete"),
-            "computerwall003".to_string(),
-        );
+        let data = b"materials/concrete;computerwall003";
+        let data: Arc<[u8]> = Arc::from(*data);
+        // let a = DirFile::new(
+        //     Arc::from("materials/concrete"),
+        //     "computerwall003".to_string(),
+        // );
+        let a = DirFile::new(data.clone(), 0..18, 19..data.len());
         let b = DirFileBigRefLowercase::new("materials", "CONCRETE/COMPUTERWALL003");
         a_eq(&a, DirFileRef::new("materials/concrete", "computerwall003"));
         a_eq(&a, b);
