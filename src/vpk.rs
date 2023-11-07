@@ -6,7 +6,7 @@ use binread::BinReaderExt;
 use std::collections::HashMap;
 
 use std::io::Cursor;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Seek, SeekFrom};
 use std::mem;
 use std::path::Path;
 
@@ -31,7 +31,7 @@ impl VPK {
         // Read the file into memory. Dir vpks are usually pretty small.
         let file = std::fs::read(dir_path)?;
 
-        let mut reader = Cursor::new(&file);
+        let mut reader = Cursor::new(file.as_slice());
 
         // Read main VPK header
         let header: VPKHeader = reader.read_le()?;
@@ -78,24 +78,24 @@ impl VPK {
         // Read index tree
         loop {
             let ext = read_cstring(&mut reader)?;
-            if ext == "" {
+            if ext.is_empty() {
                 break;
             }
 
             loop {
                 let mut path = read_cstring(&mut reader)?;
-                if path == "" {
+                if path.is_empty() {
                     break;
                 }
                 if path != " " {
                     path += "/";
                 } else {
-                    path = "".to_owned();
+                    path = String::new();
                 }
 
                 loop {
                     let name = read_cstring(&mut reader)?;
-                    if name == "" {
+                    if name.is_empty() {
                         break;
                     }
 
@@ -106,8 +106,7 @@ impl VPK {
                     }
 
                     if dir_entry.archive_index == 0x7fff {
-                        dir_entry.archive_offset =
-                            vpk.header_length + vpk.header.tree_length + dir_entry.archive_offset;
+                        dir_entry.archive_offset += vpk.header_length + vpk.header.tree_length;
                     }
 
                     let _dir_path = dir_path.to_str().unwrap();
@@ -144,19 +143,53 @@ impl VPK {
     }
 }
 
-fn read_cstring(reader: &mut impl Read) -> Result<String, Error> {
-    let mut string: String = String::new();
+fn read_cstring(reader: &mut Cursor<&[u8]>) -> Result<String, Error> {
+    // Since we know it is a cursor, we can just get the current position
+    // and then search for the next null byte
+    let start = reader.position() as usize;
+    let data = reader.get_ref();
+    let end = data[start..]
+        .iter()
+        .position(|&x| x == 0)
+        .map(|x| start + x)
+        .ok_or_else(|| {
+            Error::ReadError(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "Could not find null byte",
+            ))
+        })?;
 
-    let mut buf = [0u8];
-    loop {
-        reader.by_ref().read_exact(&mut buf)?;
-        //println!("{:?}", buf[0]);
-        if buf[0] == 0 {
-            break;
-        } else {
-            string.push(buf[0] as char);
-        }
+    let string = String::from_utf8_lossy(&data[start..end]).to_string();
+
+    // Advance past the cstring
+    // end will be at the null byte
+    reader.seek(SeekFrom::Start((end + 1) as u64))?;
+
+    Ok(string)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn test_read_cstring_with_null_byte() {
+        let data = b"hello\0world";
+        let mut cursor = Cursor::new(data.as_ref());
+
+        let result = read_cstring(&mut cursor).unwrap();
+        let remaining_data = &data[cursor.position() as usize..];
+
+        assert_eq!(result, "hello");
+        assert_eq!(remaining_data, b"world");
     }
 
-    return Ok(string);
+    #[test]
+    fn test_read_cstring_without_null_byte() {
+        let data = b"hello world"; // No null byte
+        let mut cursor = Cursor::new(data.as_ref());
+
+        assert!(read_cstring(&mut cursor).is_err());
+    }
 }

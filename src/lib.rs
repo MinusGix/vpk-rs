@@ -25,7 +25,7 @@ pub enum Error {
 
 pub fn from_path(path: impl AsRef<Path>) -> Result<VPK, Error> {
     let path = path.as_ref();
-    let vpk = VPK::read(&path)?;
+    let vpk = VPK::read(path)?;
 
     Ok(vpk)
 }
