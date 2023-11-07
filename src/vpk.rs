@@ -203,25 +203,19 @@ impl VPK {
             loop {
                 // let path_start = std::time::Instant::now();
 
-                let path_pos = reader.position();
-                let path = read_cstring(&mut reader)?;
+                let path = skip_cstring(&mut reader)?;
                 if path.is_empty() {
                     break;
                 }
-
-                let path_end = reader.position() - 1;
 
                 // p_count += 1;
 
                 loop {
                     // let name_start = std::time::Instant::now();
-                    let name_pos = reader.position();
-                    let name = read_cstring(&mut reader)?;
+                    let name = skip_cstring(&mut reader)?;
                     if name.is_empty() {
                         break;
                     }
-
-                    let name_end = reader.position() - 1;
 
                     // TODO: it might be possible to instead not do any str conversion
                     // and use the `&str`, or rather perhaps some reference into `&data`
@@ -260,13 +254,8 @@ impl VPK {
                     reader.seek(SeekFrom::Current(dir_entry.preload_length as i64))?;
 
                     // vpk.tree.insert(&ext, path.clone(), name, vpk_entry);
-                    vpk.tree.insert(
-                        file.clone(),
-                        &ext,
-                        path_pos as usize..path_end as usize,
-                        name_pos as usize..name_end as usize,
-                        vpk_entry,
-                    );
+                    vpk.tree
+                        .insert(file.clone(), &ext, path.clone(), name, vpk_entry);
 
                     // let name_end = std::time::Instant::now();
                     // let name_time = name_end - name_start;
@@ -500,6 +489,29 @@ fn read_cstring<'a>(reader: &mut Cursor<&'a [u8]>) -> Result<&'a str, Error> {
     reader.seek(SeekFrom::Start((end + 1) as u64))?;
 
     Ok(string)
+}
+
+fn skip_cstring(reader: &mut Cursor<&[u8]>) -> Result<Range<usize>, Error> {
+    // Since we know it is a cursor, we can just get the current position
+    // and then search for the next null byte
+    let start = reader.position() as usize;
+    let data = reader.get_ref();
+    let end = data[start..]
+        .iter()
+        .position(|&x| x == 0)
+        .map(|x| start + x)
+        .ok_or_else(|| {
+            Error::ReadError(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "Could not find null byte",
+            ))
+        })?;
+
+    // Advance past the cstring
+    // end will be at the null byte
+    reader.seek(SeekFrom::Start((end + 1) as u64))?;
+
+    Ok(start..end)
 }
 
 #[cfg(test)]
