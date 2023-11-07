@@ -83,14 +83,9 @@ impl VPK {
             }
 
             loop {
-                let mut path = read_cstring(&mut reader)?;
+                let path = read_cstring(&mut reader)?;
                 if path.is_empty() {
                     break;
-                }
-                if path != " " {
-                    path += "/";
-                } else {
-                    path = String::new();
                 }
 
                 loop {
@@ -119,8 +114,13 @@ impl VPK {
                         preload_start: reader.position() as usize,
                     };
 
-                    vpk.tree
-                        .insert(format!("{}{}.{}", path, name, ext), vpk_entry);
+                    let name = if path != " " {
+                        format!("{path}/{name}.{ext}")
+                    } else {
+                        format!("{name}.{ext}")
+                    };
+
+                    vpk.tree.insert(name, vpk_entry);
                 }
             }
         }
@@ -143,7 +143,7 @@ impl VPK {
     }
 }
 
-fn read_cstring(reader: &mut Cursor<&[u8]>) -> Result<String, Error> {
+fn read_cstring<'a>(reader: &mut Cursor<&'a [u8]>) -> Result<&'a str, Error> {
     // Since we know it is a cursor, we can just get the current position
     // and then search for the next null byte
     let start = reader.position() as usize;
@@ -159,7 +159,13 @@ fn read_cstring(reader: &mut Cursor<&[u8]>) -> Result<String, Error> {
             ))
         })?;
 
-    let string = String::from_utf8_lossy(&data[start..end]).to_string();
+    // let string = String::from_utf8_lossy(&data[start..end]).to_string();
+    let string = std::str::from_utf8(&data[start..end]).map_err(|_| {
+        Error::ReadError(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Could not parse cstring",
+        ))
+    })?;
 
     // Advance past the cstring
     // end will be at the null byte
