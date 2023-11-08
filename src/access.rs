@@ -64,8 +64,8 @@ impl DirFile {
 // hash for str is not decided.
 impl Hash for DirFile {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        hash_bytes_as_lowercase(state, self.dir());
-        state.write_u8(0xff);
+        // hash_bytes_as_lowercase(state, self.dir());
+        // state.write_u8(0xff);
         hash_bytes_as_lowercase(state, self.filename());
         state.write_u8(0xff);
     }
@@ -109,7 +109,7 @@ impl Equivalent<DirFile> for DirFileRef<'_> {
 }
 impl Hash for DirFileRef<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        hash_str(state, self.dir);
+        // hash_str(state, self.dir);
         hash_str(state, self.filename);
     }
 }
@@ -137,7 +137,7 @@ impl Equivalent<DirFile> for DirFileRefLowercase<'_> {
 }
 impl Hash for DirFileRefLowercase<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        hash_str_as_lowercase(state, self.dir);
+        // hash_str_as_lowercase(state, self.dir);
         hash_str_as_lowercase(state, self.filename);
     }
 }
@@ -207,14 +207,14 @@ impl Equivalent<DirFile> for DirFileBigRef<'_> {
 }
 impl Hash for DirFileBigRef<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        hash_bytes(state, self.dir.as_bytes());
-        if !self.extra_dir.is_empty() {
-            if !self.dir.is_empty() {
-                state.write_u8(b'/');
-            }
-            hash_bytes(state, self.extra_dir.as_bytes());
-        }
-        state.write_u8(0xff);
+        // hash_bytes(state, self.dir.as_bytes());
+        // if !self.extra_dir.is_empty() {
+        //     if !self.dir.is_empty() {
+        //         state.write_u8(b'/');
+        //     }
+        //     hash_bytes(state, self.extra_dir.as_bytes());
+        // }
+        // state.write_u8(0xff);
         hash_str(state, self.filename);
     }
 }
@@ -280,14 +280,14 @@ impl Equivalent<DirFile> for DirFileBigRefLowercase<'_> {
 }
 impl Hash for DirFileBigRefLowercase<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        hash_bytes_as_lowercase(state, self.dir.as_bytes());
-        if !self.extra_dir.is_empty() {
-            if !self.dir.is_empty() {
-                state.write_u8(b'/');
-            }
-            hash_bytes_as_lowercase(state, self.extra_dir.as_bytes());
-        }
-        state.write_u8(0xff);
+        // hash_bytes_as_lowercase(state, self.dir.as_bytes());
+        // if !self.extra_dir.is_empty() {
+        //     if !self.dir.is_empty() {
+        //         state.write_u8(b'/');
+        //     }
+        //     hash_bytes_as_lowercase(state, self.extra_dir.as_bytes());
+        // }
+        // state.write_u8(0xff);
         hash_str_as_lowercase(state, self.filename);
     }
 }
