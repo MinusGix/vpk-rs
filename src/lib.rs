@@ -1,5 +1,6 @@
 pub mod access;
 pub mod entry;
+mod parse;
 pub mod structs;
 pub mod vpk;
 
@@ -15,8 +16,6 @@ pub enum Error {
     ReadError(#[from] std::io::Error),
     #[error("Expected null terminator at end of cstring")]
     ExpectedNullTerminator,
-    #[error("Error while trying to read data: {0}")]
-    BinReadError(#[from] binread::Error),
     #[error("Invalid signature, provided file is not a VPK file")]
     InvalidSignature,
     #[error("Unsupported VPK version({0}), only version 2 and low")]

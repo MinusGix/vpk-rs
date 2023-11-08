@@ -9,13 +9,10 @@ use crate::entry::*;
 use crate::structs::*;
 use crate::Error;
 
-use ahash::HashMapExt;
-use binread::BinReaderExt;
 use indexmap::Equivalent;
 use indexmap::IndexMap;
 use std::borrow::Cow;
 
-use std::collections::HashMap;
 use std::hash::Hash;
 use std::io::Cursor;
 use std::io::{Seek, SeekFrom};
@@ -176,7 +173,7 @@ impl VPK {
         let mut reader = Cursor::new(file.as_ref());
 
         // Read main VPK header
-        let header: VPKHeader = reader.read_le()?;
+        let header: VPKHeader = VPKHeader::read_le(&mut reader)?;
 
         if header.signature != VPK_SIGNATURE {
             return Err(Error::InvalidSignature);
@@ -196,7 +193,7 @@ impl VPK {
         };
 
         if vpk.header.version == 2 {
-            let header_v2: VPKHeaderV2 = reader.read_le()?;
+            let header_v2 = VPKHeaderV2::read_le(&mut reader)?;
 
             if header_v2.self_hashes_length != VPK_SELF_HASHES_LENGTH {
                 return Err(Error::HashSizeMismatch);
@@ -208,7 +205,7 @@ impl VPK {
                 + header_v2.chunk_hashes_length;
             reader.seek(SeekFrom::Current(checksum_offset as i64))?;
 
-            let header_v2_checksum: VPKHeaderV2Checksum = reader.read_le()?;
+            let header_v2_checksum = VPKHeaderV2Checksum::read_le(&mut reader)?;
 
             vpk.header_v2 = Some(header_v2);
             vpk.header_v2_checksum = Some(header_v2_checksum);
@@ -270,7 +267,7 @@ impl VPK {
                     // `DirFile` and also for comparison..
                     // let name = name.to_lowercase();
 
-                    let mut dir_entry: VPKDirectoryEntry = reader.read_le()?;
+                    let mut dir_entry = VPKDirectoryEntry::read_le(&mut reader)?;
 
                     if dir_entry.suffix != 0xffff {
                         return Err(Error::MalformedIndex);

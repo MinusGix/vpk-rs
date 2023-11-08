@@ -8,11 +8,10 @@ authors = [
     "Robin Appelman <robin@icewind.nl>",
 ]
 repository = "https://github.com/roman901/vpk-rs"
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 thiserror = "1.0.20"
-binread = "1.0.1"
 indexmap = "2.1.0"
 cachedhash = "0.1.2"
 memchr = "2.6.4"

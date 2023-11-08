@@ -1,9 +1,9 @@
-use binread::BinRead;
 use std::borrow::Cow;
 use std::fs::File;
 use std::io::{Error, Read, Seek, SeekFrom};
 use std::ops::Range;
 
+use crate::parse::{read_u16, read_u32};
 use crate::VPK;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,7 +34,7 @@ impl VPKEntry {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, BinRead)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VPKDirectoryEntry {
     pub crc32: u32,
     pub preload_length: u16,
@@ -42,6 +42,25 @@ pub struct VPKDirectoryEntry {
     pub archive_offset: u32,
     pub file_length: u32,
     pub suffix: u16,
+}
+impl VPKDirectoryEntry {
+    pub fn read_le(r: &mut impl Read) -> std::io::Result<Self> {
+        let crc32 = read_u32(r)?;
+        let preload_length = read_u16(r)?;
+        let archive_index = read_u16(r)?;
+        let archive_offset = read_u32(r)?;
+        let file_length = read_u32(r)?;
+        let suffix = read_u16(r)?;
+
+        Ok(Self {
+            crc32,
+            preload_length,
+            archive_index,
+            archive_offset,
+            file_length,
+            suffix,
+        })
+    }
 }
 
 /// A handle holds both the [`VPK`] and a held [`VPKEntry`].
