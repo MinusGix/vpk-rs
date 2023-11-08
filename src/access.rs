@@ -292,9 +292,10 @@ impl Hash for DirFileBigRefLowercase<'_> {
     }
 }
 
+pub type MapRandomState = ahash::RandomState;
 /// (Dir, Filename) -> VPKEntry
 /// This uses a tuple because you rarely need to iterate over all the entries in a directory.
-pub type DirFileEntryMap = IndexMap<DirFile, VPKEntry>;
+pub type DirFileEntryMap = IndexMap<DirFile, VPKEntry, MapRandomState>;
 
 #[cfg(test)]
 mod tests {

@@ -1,3 +1,4 @@
+use crate::access;
 use crate::access::DirFile;
 use crate::access::DirFileBigRef;
 use crate::access::DirFileBigRefLowercase;
@@ -8,6 +9,7 @@ use crate::entry::*;
 use crate::structs::*;
 use crate::Error;
 
+use ahash::HashMapExt;
 use binread::BinReaderExt;
 use indexmap::Equivalent;
 use indexmap::IndexMap;
@@ -220,7 +222,8 @@ impl VPK {
 
         // Cache the archive paths for each archive index
         // This lets us share them, and also avoid formatting every time
-        let mut archive_paths: HashMap<u16, Arc<str>> = HashMap::with_capacity(32);
+        let mut archive_paths: HashMap<u16, Arc<str>, access::MapRandomState> =
+            HashMap::<u16, Arc<str>, access::MapRandomState>::with_capacity(32);
 
         // let mut avg_path = 0.0;
         // let mut path_count = 0;
@@ -409,7 +412,7 @@ pub struct VPKTree {
     pub wav: DirFileEntryMap,
     pub mp3: DirFileEntryMap,
     /// (ext, dir file entry map)
-    pub other: IndexMap<Vec<u8>, DirFileEntryMap>,
+    pub other: IndexMap<Vec<u8>, DirFileEntryMap, access::MapRandomState>,
 }
 impl VPKTree {
     pub fn new_with_capacity(probable_kind: ProbableKind) -> VPKTree {

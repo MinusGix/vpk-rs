@@ -16,6 +16,7 @@ binread = "1.0.1"
 indexmap = "2.1.0"
 cachedhash = "0.1.2"
 memchr = "2.6.4"
+ahash = "0.8.6"
 
 [dev-dependencies]
 criterion = "0.3"
