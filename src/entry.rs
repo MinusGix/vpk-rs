@@ -3,14 +3,12 @@ use std::borrow::Cow;
 use std::fs::File;
 use std::io::{Error, Read, Seek, SeekFrom};
 use std::ops::Range;
-use std::sync::Arc;
 
 use crate::VPK;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VPKEntry {
     pub dir_entry: VPKDirectoryEntry,
-    pub archive_path: Arc<str>,
     pub preload_start: usize,
 }
 
@@ -27,8 +25,8 @@ impl VPKEntry {
             return Ok(Cow::Borrowed(preload_data));
         }
 
+        let archive_path = &parent.archive_paths[usize::from(self.dir_entry.archive_index)];
         let mut buf = vec![0; self.dir_entry.file_length as usize];
-        let archive_path: &str = &self.archive_path;
         let mut file = File::open(archive_path)?;
         file.seek(SeekFrom::Start(self.dir_entry.archive_offset as u64))?;
         file.read_exact(&mut buf)?;

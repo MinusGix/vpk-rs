@@ -165,6 +165,7 @@ pub struct VPK {
     /// The data in a dir is usually pretty small, so just keeping the loaded file
     /// is cheaper than reading out isolated preload data vecs and the like.
     pub(crate) data: Arc<[u8]>,
+    pub archive_paths: Vec<String>,
 }
 
 impl VPK {
@@ -191,6 +192,7 @@ impl VPK {
             header_v2_checksum: None,
             tree: VPKTree::new_with_capacity(probable_kind),
             data: file.clone(),
+            archive_paths: Vec::new(),
         };
 
         if vpk.header.version == 2 {
@@ -220,11 +222,6 @@ impl VPK {
         // let mut avg_name = 0.0;
         // let mut name_count = 0;
 
-        // Cache the archive paths for each archive index
-        // This lets us share them, and also avoid formatting every time
-        let mut archive_paths: HashMap<u16, Arc<str>, access::MapRandomState> =
-            HashMap::<u16, Arc<str>, access::MapRandomState>::with_capacity(32);
-
         // let mut avg_path = 0.0;
         // let mut path_count = 0;
 
@@ -236,6 +233,8 @@ impl VPK {
 
         // TODO: don't require this to be a str? Weird systems might have bad utf8 in the paths
         let dir_path = dir_path.to_str().unwrap();
+        // The largest archive index, used to initialize the archive paths vec
+        let mut max_archive_index = 0;
         loop {
             // let ext_start = std::time::Instant::now();
             let ext = read_cstring(&mut reader)?;
@@ -281,18 +280,11 @@ impl VPK {
                         dir_entry.archive_offset += vpk.header_length + vpk.header.tree_length;
                     }
 
-                    let archive_path = archive_paths
-                        .entry(dir_entry.archive_index)
-                        .or_insert_with(|| {
-                            let archive_path = dir_path
-                                .replace("dir.", &format!("{:03}.", dir_entry.archive_index));
-                            Arc::from(archive_path)
-                        })
-                        .clone();
+                    // Ensure that our archive path is in the archive paths vec
+                    max_archive_index = max_archive_index.max(dir_entry.archive_index);
 
                     let vpk_entry = VPKEntry {
                         dir_entry,
-                        archive_path,
                         // This can't be >usize becuase we're reading from a vec
                         preload_start: reader.position() as usize,
                     };
@@ -329,6 +321,13 @@ impl VPK {
         // eprintln!("avg_name {}", avg_name);
 
         // eprintln!("avg_path_count {}", avg_path_count);
+
+        // Initialize the archive paths
+        vpk.archive_paths.reserve(max_archive_index as usize + 1);
+        for i in 0..=max_archive_index {
+            let archive_path = dir_path.replace("dir.", &format!("{:03}.", i));
+            vpk.archive_paths.push(archive_path);
+        }
 
         Ok(vpk)
     }
