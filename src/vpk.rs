@@ -13,6 +13,7 @@ use indexmap::Equivalent;
 use indexmap::IndexMap;
 use std::borrow::Cow;
 
+use std::fs::File;
 use std::hash::Hash;
 use std::io::Cursor;
 use std::io::{Seek, SeekFrom};
@@ -369,6 +370,34 @@ impl VPK {
         }
 
         Ok(vpk)
+    }
+
+    /// Get the path to an archive file.  
+    /// ```rust,ignore
+    /// let vpk: VPK = /* ... */;
+    /// let entry: VPKEntryHandle<'_> = vpk.get_direct(
+    ///     Ext::Vmt,
+    ///     "materials/",
+    ///     "concrete/concretefloor001a"
+    /// ).unwrap();
+    /// let archive_index: u16 = entry.entry.archive_index();
+    /// let path: &str = vpk.archive_path(archive_index).unwrap();
+    /// ```
+    /// (Or, you could just use `entry.archive_path()`, since the handle already has the [`VPK`])
+    pub fn archive_path(&self, archive_index: u16) -> Option<&str> {
+        self.archive_paths
+            .get(usize::from(archive_index))
+            .map(String::as_str)
+    }
+
+    /// Open every single archive path available as files.  
+    pub fn open_all_archive_paths(&self) -> std::io::Result<Vec<File>> {
+        let mut files = Vec::with_capacity(self.archive_paths.len());
+        for path in &self.archive_paths {
+            files.push(File::open(path)?);
+        }
+
+        Ok(files)
     }
 
     pub fn get_direct<'s, K: Equivalent<DirFile> + Hash>(

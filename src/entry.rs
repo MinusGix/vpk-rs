@@ -19,18 +19,72 @@ impl VPKEntry {
         start..end
     }
 
-    pub fn get<'v>(&self, parent: &'v VPK) -> Result<Cow<'v, [u8]>, Error> {
+    pub fn archive_index(&self) -> u16 {
+        self.dir_entry.archive_index
+    }
+
+    /// Get the data in the [`VPKEntry`]
+    /// If this is preloaded data, aka the data is stored in the directory file, then it can easily
+    /// return a `Cow::Borrowed`. Typically this is only small files, like `vmt`s.
+    /// For other files, it has to open the resident archive file and read the requisite data.
+    ///
+    /// If `files` does not contain the archive file for this entry, then it will open the archive
+    /// file.
+    /// If `files` does contain the archive file for this entry, then it will use that file. This is
+    /// useful if you want to read multiple files from the same archive file.
+    pub fn get_with_files<'v>(
+        &self,
+        parent: &'v VPK,
+        files: &[File],
+    ) -> Result<Cow<'v, [u8]>, Error> {
+        if self.dir_entry.archive_index == 0x7fff {
+            self.get(parent)
+        } else {
+            let archive_index = self.archive_index();
+            let archive_file = &files[usize::from(archive_index)];
+
+            self.get_with_file(parent, Some(archive_file))
+        }
+    }
+
+    /// Get the data in the [`VPKEntry`]  
+    /// If this is preloaded data, aka the data is stored in the directory file, then it can easily
+    /// return a `Cow::Borrowed`. Typically this is only small files, like `vmt`s.  
+    /// For other files, it has to open the resident archive file and read the requisite data.  
+    ///   
+    /// If `file` is `None`, then it will open the archive file.
+    /// If `file` is `Some`, then it will use that file. This is useful if you want to read multiple
+    /// files from the same archive file.
+    pub fn get_with_file<'v>(
+        &self,
+        parent: &'v VPK,
+        file: Option<&File>,
+    ) -> Result<Cow<'v, [u8]>, Error> {
         if self.dir_entry.archive_index == 0x7fff {
             let preload_data = &parent.data[self.preload_interval()];
             return Ok(Cow::Borrowed(preload_data));
         }
 
-        let archive_path = &parent.archive_paths[usize::from(self.dir_entry.archive_index)];
         let mut buf = vec![0; self.dir_entry.file_length as usize];
-        let mut file = File::open(archive_path)?;
+        let tmp;
+        let mut file = if let Some(file) = file {
+            file
+        } else {
+            let archive_path = &parent.archive_paths[usize::from(self.dir_entry.archive_index)];
+            tmp = File::open(archive_path)?;
+            &tmp
+        };
         file.seek(SeekFrom::Start(self.dir_entry.archive_offset as u64))?;
         file.read_exact(&mut buf)?;
         Ok(Cow::Owned(buf))
+    }
+
+    /// Get the data in the [`VPKEntry`]
+    /// If this is preloaded data, aka the data is stored in the directory file, then it can easily
+    /// return a `Cow::Borrowed`. Typically this is only small files, like `vmt`s.
+    /// For other files, it has to open the resident archive file and read the requisite data.
+    pub fn get<'v>(&self, parent: &'v VPK) -> Result<Cow<'v, [u8]>, Error> {
+        self.get_with_file(parent, None)
     }
 }
 
@@ -73,7 +127,50 @@ pub struct VPKEntryHandle<'a> {
     pub entry: &'a VPKEntry,
 }
 impl<'a> VPKEntryHandle<'a> {
+    /// Get the data in the [`VPKEntry`]
+    /// If this is preloaded data, aka the data is stored in the directory file, then it can easily
+    /// return a `Cow::Borrowed`. Typically this is only small files, like `vmt`s.
+    /// For other files, it has to open the resident archive file and read the requisite data.
+    ///
+    /// If `files` does not contain the archive file for this entry, then it will open the archive
+    /// file.
+    /// If `files` does contain the archive file for this entry, then it will use that file. This is
+    /// useful if you want to read multiple files from the same archive file.
+    pub fn get_with_files(&self, files: &[File]) -> Result<Cow<'a, [u8]>, Error> {
+        self.entry.get_with_files(self.vpk, files)
+    }
+
+    /// Get the data in the [`VPKEntry`]  
+    /// If this is preloaded data, aka the data is stored in the directory file, then it can easily
+    /// return a `Cow::Borrowed`. Typically this is only small files, like `vmt`s.  
+    /// For other files, it has to open the resident archive file and read the requisite data.  
+    ///   
+    /// If `file` is `None`, then it will open the archive file.
+    /// If `file` is `Some`, then it will use that file. This is useful if you want to read multiple
+    /// files from the same archive file.
+    pub fn get_with_file(&self, file: Option<&File>) -> Result<Cow<'a, [u8]>, Error> {
+        self.entry.get_with_file(self.vpk, file)
+    }
+
+    /// Get the data in the [`VPKEntry`]
+    /// If this is preloaded data, aka the data is stored in the directory file, then it can easily
+    /// return a `Cow::Borrowed`. Typically this is only small files, like `vmt`s.
+    /// For other files, it has to open the resident archive file and read the requisite data.
     pub fn get(&self) -> Result<Cow<'a, [u8]>, Error> {
         self.entry.get(self.vpk)
+    }
+    /// Only returns `None` if the `archive_index` is `0x7fff`  
+    ///   
+    /// # Panics
+    /// If the archive index is not `0x7fff`, and it does not exist in `vpk`.  
+    /// This should *only* happen if there was a bug in the parsing logic, or some vpk entries were
+    /// manually constructed with invalid archive indices.
+    pub fn archive_path(&self) -> Option<&str> {
+        if self.entry.dir_entry.archive_index == 0x7fff {
+            return None;
+        }
+
+        let archive_index = usize::from(self.entry.dir_entry.archive_index);
+        Some(&self.vpk.archive_paths[archive_index])
     }
 }
