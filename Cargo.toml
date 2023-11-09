@@ -18,7 +18,7 @@ memchr = "2.6.4"
 ahash = "0.8.6"
 
 [dev-dependencies]
-criterion = "0.3"
+criterion = "0.5"
 
 [[bench]]
 name = "load"
