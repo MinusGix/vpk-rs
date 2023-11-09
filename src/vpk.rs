@@ -24,6 +24,48 @@ use std::sync::Arc;
 const VPK_SIGNATURE: u32 = 0x55aa1234;
 const VPK_SELF_HASHES_LENGTH: u32 = 48;
 
+// TODO: This is still not as fast as I'd like it to be.
+// There's some potential for just direct improvement to the parsing code in this,
+// but not much.
+// - Swap the hashing logic to only hash 'relevant' parts
+//   I skip hashing directory, since usually filename is enough to disambiguate easily enough.
+//   But I still hash the entire filename. Possible we could do something smarter using like word
+//   prefix chars and the suffixes (like 001a) to get a basically unique but smaller hash.
+//   Of course this trades off for looking up data, but probably the time to load textures is
+//   dominated by other factors.
+// - Choose/modify the hashing function so that we can hash slices efficiently even
+//   if they aren't lowercase.
+//   Currently we can't use `Hasher::write` in vpk-rs because ahash appears to impl it differently
+//   than writing the bytes individually, but I'm unsure. It is hard to tell.
+//   Possibly we could do some modification to the way it uses u64s/u128s to do the ascii conversion
+//   But we would also need some way to write the bytes individually, or we would have to make the
+//   hash consider write(&[u8]) as equivalent to writing them individually, because we currently
+//   have data that isn't nicely contiguous.
+//
+//
+// The main problem with parsing VPK directory files efficiently, such that it is taking 11ms in a
+// benchmark (so a primed cache), is that the file format is *aggressively* sequential.
+// You have to parse the Ext as a CString, then parse the path inside it as a CString,
+// then parse filenames as a CString, and then possibly variable sized data inside of that.
+// - [ext: CString]*
+//   - [path: CString]*
+//     - [filename: CString]*
+//        - data info
+//        - possible variable sized data
+// This seems to me that there isn't really any way to skip forward to do this in parallel.
+//
+//
+// One obvious method around this whole problem is to store an index file separately that we can
+// load. Easiest would be user-supplied index file that they can generate from a parsed `VPK`
+// struct.
+// Though there's the question of how you verify that its valid. You can't use the CRC it provides
+// because you'd have to validate that.
+// But, computing the CRC or some other hash is probably enough and would hopefully still be faster.
+//
+//
+// Another alternative, depending on the usecase, is just having a conversion to some nicer format
+// than VPK.
+
 // TODO: comments about what these are
 // TODO: add more, possibly remove uncommon or less useful entries
 /// Extensions
