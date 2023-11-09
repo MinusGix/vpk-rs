@@ -6,6 +6,21 @@ use std::ops::Range;
 use crate::parse::{read_u16, read_u32};
 use crate::VPK;
 
+pub trait VpkReaderProvider {
+    type Reader<'a>: Read + Seek + 'a
+    where
+        Self: 'a;
+
+    /// Return a reader for the given archive index.  
+    /// Note: if you want the read to continue despite returning an error, then you should just
+    /// ignore the error and return `None`. Any erros will be returned by the `get` function.
+    fn vpk_reader(&self, archive_index: u16) -> std::io::Result<Option<Self::Reader<'_>>>;
+}
+
+// I hate this
+trait ReadSeek: Read + Seek {}
+impl<T: Read + Seek> ReadSeek for T {}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VPKEntry {
     pub dir_entry: VPKDirectoryEntry,
@@ -35,15 +50,15 @@ impl VPKEntry {
     pub fn get_with_files<'v>(
         &self,
         parent: &'v VPK,
-        files: &[File],
+        prov: &impl VpkReaderProvider,
     ) -> Result<Cow<'v, [u8]>, Error> {
         if self.dir_entry.archive_index == 0x7fff {
             self.get(parent)
         } else {
             let archive_index = self.archive_index();
-            let archive_file = &files[usize::from(archive_index)];
+            let archive_reader = prov.vpk_reader(archive_index)?;
 
-            self.get_with_file(parent, Some(archive_file))
+            self.get_with_file(parent, archive_reader)
         }
     }
 
@@ -55,10 +70,10 @@ impl VPKEntry {
     /// If `file` is `None`, then it will open the archive file.
     /// If `file` is `Some`, then it will use that file. This is useful if you want to read multiple
     /// files from the same archive file.
-    pub fn get_with_file<'v>(
+    pub fn get_with_file<'v, R: Read + Seek>(
         &self,
         parent: &'v VPK,
-        file: Option<&File>,
+        mut reader: Option<R>,
     ) -> Result<Cow<'v, [u8]>, Error> {
         if self.dir_entry.archive_index == 0x7fff {
             let preload_data = &parent.data[self.preload_interval()];
@@ -66,13 +81,13 @@ impl VPKEntry {
         }
 
         let mut buf = vec![0; self.dir_entry.file_length as usize];
-        let tmp;
-        let mut file = if let Some(file) = file {
-            file
+        let mut tmp;
+        let file: &mut dyn ReadSeek = if let Some(file) = reader.as_mut() {
+            &mut *file
         } else {
             let archive_path = &parent.archive_paths[usize::from(self.dir_entry.archive_index)];
             tmp = File::open(archive_path)?;
-            &tmp
+            &mut tmp
         };
         file.seek(SeekFrom::Start(self.dir_entry.archive_offset as u64))?;
         file.read_exact(&mut buf)?;
@@ -84,7 +99,7 @@ impl VPKEntry {
     /// return a `Cow::Borrowed`. Typically this is only small files, like `vmt`s.
     /// For other files, it has to open the resident archive file and read the requisite data.
     pub fn get<'v>(&self, parent: &'v VPK) -> Result<Cow<'v, [u8]>, Error> {
-        self.get_with_file(parent, None)
+        self.get_with_file::<File>(parent, None)
     }
 }
 
@@ -136,8 +151,8 @@ impl<'a> VPKEntryHandle<'a> {
     /// file.
     /// If `files` does contain the archive file for this entry, then it will use that file. This is
     /// useful if you want to read multiple files from the same archive file.
-    pub fn get_with_files(&self, files: &[File]) -> Result<Cow<'a, [u8]>, Error> {
-        self.entry.get_with_files(self.vpk, files)
+    pub fn get_with_files(&self, prov: &impl VpkReaderProvider) -> Result<Cow<'a, [u8]>, Error> {
+        self.entry.get_with_files(self.vpk, prov)
     }
 
     /// Get the data in the [`VPKEntry`]  
@@ -148,7 +163,7 @@ impl<'a> VPKEntryHandle<'a> {
     /// If `file` is `None`, then it will open the archive file.
     /// If `file` is `Some`, then it will use that file. This is useful if you want to read multiple
     /// files from the same archive file.
-    pub fn get_with_file(&self, file: Option<&File>) -> Result<Cow<'a, [u8]>, Error> {
+    pub fn get_with_file<R: Read + Seek>(&self, file: Option<R>) -> Result<Cow<'a, [u8]>, Error> {
         self.entry.get_with_file(self.vpk, file)
     }
 
