@@ -174,6 +174,11 @@ impl<'a> VPKEntryHandle<'a> {
     pub fn get(&self) -> Result<Cow<'a, [u8]>, Error> {
         self.entry.get(self.vpk)
     }
+
+    pub fn archive_index(&self) -> u16 {
+        self.entry.archive_index()
+    }
+
     /// Only returns `None` if the `archive_index` is `0x7fff`  
     ///   
     /// # Panics
